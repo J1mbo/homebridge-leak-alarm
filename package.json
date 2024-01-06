@@ -1,6 +1,6 @@
 {
   "name": "homebridge-leak-alarm",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A pluging for HomeBridge to read SHT sensor data from a simple Ethernet connected microcontroller via HTTP as CSV and present this as a leak alarm in Homekit. Note: BETA.",
   "main": "index.js",
   "scripts": {
@@ -11,10 +11,12 @@
     "url": "git+https://github.com/J1mbo/homebridge-leak-alarm.git"
   },
   "keywords": [
+    "homebridge-plugin",
     "homebridge",
     "leakalarm",
     "leak",
-    "alarm"
+    "alarm",
+    "SHT"
   ],
   "author": "James Pearce <pearce_jj@hotmail.com>",
   "license": "MIT",

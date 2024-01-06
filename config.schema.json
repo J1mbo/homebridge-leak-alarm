@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "Lo-tech Leak Sensor",
+  "pluginAlias": "HTTP Leak Sensor",
   "pluginType": "accessory",
   "singular": false,
   "headerDisplay": "",
