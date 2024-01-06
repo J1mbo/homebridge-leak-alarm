@@ -1,0 +1,86 @@
+{
+  "pluginAlias": "Lo-tech Leak Sensor",
+  "pluginType": "accessory",
+  "singular": false,
+  "headerDisplay": "",
+  "footerDisplay": "",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "Sensor Name",
+        "required": true
+      },
+      "model": {
+        "title": "Sensor Model Number",
+        "type": "string",
+        "required": false
+      },
+      "IpAddress": {
+        "title": "Sensor IP Address",
+        "type": "string",
+        "description": "Enter the static/reserved IP assigned to the sensor device",
+        "required": false,
+	"format": "ipv4"
+      },
+      "pollTimer": {
+        "title": "Interval (in seconds) to poll the status",
+        "type": "integer",
+        "default": 30,
+        "required": true
+      },
+      "alertThreshold": {
+        "title": "Sustained Relative Humidity level at which alert status is triggered",
+        "type": "integer",
+        "default": 90,
+        "required": true
+      },
+      "sensor1Location": {
+        "title": "Display Name for Sensor 1",
+        "type": "string",
+        "required": false
+      },
+      "sensor2Location": {
+        "title": "Display Name for Sensor 2",
+        "type": "string",
+        "required": false
+      }
+    }
+  },
+  "form": [
+    {
+      "type": "fieldset",
+      "expandable": true,
+      "title": "Dual-Sensor Leak Alarm Web Server",
+      "description": "These settings define how to reach the sensor.",
+      "items": [
+        "IpAddress",
+        "pollTimer"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "expandable": true,
+      "title": "Display Settings",
+      "description": "These settings control how the sensor will be displayed within HomeKit.",
+      "items": [
+        "name",
+        "model",
+        "sensor1Location",
+        "sensor2Location"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "expandable": true,
+      "title": "Alert thresholds",
+      "description": "These settings define when HomeKit shows alert conditions.",
+      "items": [
+        "alertThreshold"
+      ]
+    }
+  ],
+  "display": null
+}
