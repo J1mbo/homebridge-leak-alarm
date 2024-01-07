@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "HTTP Leak Sensor",
+  "pluginAlias": "homebridge-leak-alarm",
   "pluginType": "accessory",
   "singular": false,
   "headerDisplay": "",
