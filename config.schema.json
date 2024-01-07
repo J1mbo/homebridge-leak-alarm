@@ -1,5 +1,5 @@
 {
-  "pluginAlias": "homebridge-leak-alarm",
+  "pluginAlias": "LeakAlarm",
   "pluginType": "accessory",
   "singular": false,
   "headerDisplay": "",
