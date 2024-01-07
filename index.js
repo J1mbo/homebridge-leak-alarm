@@ -13,7 +13,14 @@
 //
 // Leaks are detected when the reported relative humity crosses the configured Alert Threshold for all three readings. The reading frequency is defined in the sensor. Therefore, this solution is sutable for interior use in heated spaces only.
 //
-// The sensor is organised in HomeKit as two Leak Sensors, each also containing a Temperature and Humity sensor.
+// The sensor is organised in HomeKit as a Leak Sensor containing two Temperature and Humity sensors.
+
+
+// status constants
+const LEAK_NOT_DETECTED = 0;
+const LEAK_DETECTED     = 1;
+const NO_FAULT          = 0;
+const GENERAL_FAULT     = 1;
 
 
 // HomeKit API registration
@@ -22,7 +29,7 @@ module.exports = (api) => {
 };
 
 
-
+/*
   // ----  CSV handling function ----
 
   function CSVToArray( strData, strDelimiter ) {
@@ -93,7 +100,7 @@ module.exports = (api) => {
     // Return the parsed data.
     return( arrData );
   }
-
+*/
 
 class LeakAlarm {
 
@@ -107,6 +114,7 @@ class LeakAlarm {
 
       this.name            = config.name            || 'Leak Alarm';
       this.model           = config.model           || 'Dual Sensor';
+      this.serialNumber    = config.serialNumber    || '00-00-00-00';
       this.IpAddress       = config.IpAddress;
       this.pollTimer       = config.pollTimer       || 30; //default poll interval = 30 seconds
       this.alertThreshold  = config.alertThreshold  || 90; //default alert at 90% relative humidity
@@ -114,20 +122,22 @@ class LeakAlarm {
       this.sensor2Location = config.sensor2Location || 'Sensor 2';
 
       this.state = {
-        AlertState:        0,
-        sensor1State:      0,
-        sensor1Temp:       0,
-        sensor2Humid:      0,
-        sensor2Temp:       0,
-        sensor1Humid:      0,
+        AlertState:        LEAK_NOT_DETECTED,   // LEAK_NOT_DETECTED or LEAK_DETECTED
+        deviceState:       NO_FAULT,            // NO_FAULT or GENERAL_FAULT
+        sensor1State:      NO_FAULT,            // NO_FAULT or GENERAL_FAULT
+        sensor1Temp:       0.0,                 // Average of last 3 readings in °C
+        sensor1Humid:      0.0,                 // Average of last 3 reading, RH%
+        sensor2State:      NO_FAULT,            // NO_FAULT or GENERAL_FAULT
+        sensor2Temp:       0.0,                 // Average of last 3 readings in °C
+        sensor2Humid:      0.0                  // Average of last 3 reading, RH%
       };
 
       // Create the services
       this.leakSensor          = new this.Service.LeakSensor(this.name);
-      this.tempSensor1Service  = new this.Service.TemperatureSensor(this.sensor1Location);
-      this.humidSensor1Service = new this.Service.HumiditySensor(this.sensor1Location);
-      this.tempSensor2Service  = new this.Service.TemperatureSensor(this.sensor2Location);
-      this.humidSensor2Service = new this.Service.HumiditySensor(this.sensor2Location);
+      this.tempSensor1Service  = new this.Service.TemperatureSensor(this.sensor1Location,'SHT1');
+      this.humidSensor1Service = new this.Service.HumiditySensor(this.sensor1Location,'SHT1');
+      this.tempSensor2Service  = new this.Service.TemperatureSensor(this.sensor2Location,'SHT2');
+      this.humidSensor2Service = new this.Service.HumiditySensor(this.sensor2Location,'SHT2');
 
       // IOS 16 and above over-writes the descriptive names set against the accesories
       // The following restores them to display as previously (e.g., on IOS 15)
@@ -148,8 +158,9 @@ class LeakAlarm {
 
       // create an information service...
       this.informationService = new this.Service.AccessoryInformation()
-        .setCharacteristic(this.Characteristic.Manufacturer, "Lo-tech")
-        .setCharacteristic(this.Characteristic.Model, this.model);
+        .setCharacteristic(this.Characteristic.Manufacturer, "HomeBridge")
+        .setCharacteristic(this.Characteristic.Model, this.model)
+        .setCharacteristic(this.Characteristic.SerialNumber, this.serialNumber);
 
       this.leakSensor
         .getCharacteristic(this.Characteristic.LeakDetected)
@@ -163,10 +174,10 @@ class LeakAlarm {
         .on('get', this.getHumid1.bind(this));
       this.tempSensor2Service
         .getCharacteristic(this.Characteristic.CurrentTemperature)
-        .on('get', this.getTemp1.bind(this));
+        .on('get', this.getTemp2.bind(this));
       this.humidSensor2Service
         .getCharacteristic(this.Characteristic.CurrentRelativeHumidity)
-        .on('get', this.getHumid1.bind(this));
+        .on('get', this.getHumid2.bind(this));
 
   } // constructor
 
@@ -177,17 +188,14 @@ class LeakAlarm {
     accessory.log.debug(accessory.name + ': Invoked getServices');
 
     // enquire state from device
-    var page = require('webpage').create(),
-    system   = require('system'), address;
+    const page = require('http');
 
-    address = this.IpAddress;
-    page.open(address, function(status) {
-      if (status !== 'success') {
-        accessory.log('Could not connect to configured device (' + this.IpAddress + ')');
-      } else {
-        accessory.log('Connected to device at ' + this.IpAddress);
-      }
+    page.get('http://' + this.IpAddress + '/', res => {
+      accessory.log('Connected to device at ' + this.IpAddress);
+    }).on('error', err => {
+      accessory.log('Could not connect to configured device (' + this.IpAddress + ') - Error: ', err.message);
     });
+
     accessory.pollState(); // initialise plugin with discovered IP address
 
     // Retrun the services to HomeBridge
@@ -244,37 +252,139 @@ class LeakAlarm {
     var Characteristic = this.Characteristic;
 
     // enquire state from device
-    var page = require('webpage').create(),
-    system   = require('system'), address;
-    var SensorData = [[]];
+    const page = require('http');
+    let rawData = '';
 
-    address = this.IpAddress;
-    page.open(address, function(status) {
-      if (status !== 'success') {
-        accessory.debug.log('Could not connect to configured device (' + this.IpAddress + ')');
-      } else {
-        accessory.log('Connected to device at ' + this.IpAddress);
-        accessory.log(page.content);
-        SensorData = CSVToArray(page.content,',' );
-        accessory.log( SensorData );
-        // Process the readings
-        accessory.state.sensor1State = 0;
-        accessory.state.sensor1Temp  = 0;
-        accessory.state.sensor2Humid = 0;
-        accessory.state.sensor2Temp  = 0;
-        accessory.state.sensor1Humid = 0;
+    page.get('http://' + this.IpAddress + '/', (res) => {
+      accessory.log.debug('Connected to configured device (' + this.IpAddress + ')');
+      const { statusCode } = res;
+      const contentType = res.headers['content-type'];
+
+      let error;
+      // Assume success only on receipt of 200 status
+      if (statusCode !== 200) {
+        error = new Error('Request Failed.\n' + `Status Code: ${statusCode}`);
       }
+      if (error) {
+        accessory.log(error.message);
+        // Consume response data to free up memory
+        res.resume();
+        return;
+      }
+
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { rawData += chunk; });
+      res.on('end', () => {
+        try {
+          accessory.log.debug('Received data: ' + rawData);
+        } catch (e) {
+          accessory.log(`Exception: ${e.message}`);
+        }
+      });
+    }).on('error', (e) => {
+      accessory.log('Could not connect to configured device (' + this.IpAddress + ')');
+      accessory.log(`Got error: ${e.message}`);
     });
 
-    accessory.log.debug("pollUpsState: Updating accessory state...");
-    accessory.contactSensor.updateCharacteristic(Characteristic.ContactSensorState, accessory.state.contactSensorState);
+    // allow 3 seconds for the above web request to success (or fail)
+    setTimeout(() => {
+    accessory.log.debug('Processing data: ' + rawData);
+    // Hopefully we now have the appliance data stored in 'rawData' - attempt to process this
+    rawData = rawData.trim();                     // remove white-space
+    rawData = rawData.replace(/\r?\n|\r/g, ",");  // remove line breaks etc to provide one stream of data
+    accessory.log.debug('Trimmed data: ' + rawData);
+    const sensorData = rawData.split(",");
+    var i = 0;
+    var thisSensor = 0;
 
-    // update HomeBridge with all status of all elements
+    do {
+      if (sensorData[i++] == "SHT") {
+        accessory.log.debug('Processing SHT Sensor data');
+        if (sensorData[i] == "1") {
+          accessory.log.debug('Processing SHT Sensor data for sensor 1');
+          thisSensor = 1;
+          i = i + 2; // advance array pointer
+        } else if (sensorData[i] == "2") {
+          accessory.log.debug('Processing SHT Sensor data for sensor 2');
+          thisSensor = 2;
+          i = i + 2; // advance array pointer
+        }
+        if (thisSensor > 0) {
+          // We found "SHT",["1"|"2"],[]
+          if (sensorData[i] == "Detected") {
+            accessory.log.debug('SHT Sensor ' + thisSensor + ' status is normal');
+            // sensor listed as "Detected" - which means OK
+            var thisTemp  = ( (+sensorData[++i]) +
+                              (+sensorData[++i]) +
+                              (+sensorData[++i]) ) / 3;
+            accessory.log.debug('SHT Temperature reading: ' + thisTemp + '°C');
+            var thisHumid = ( (+(sensorData[++i].slice(0,-1))) +
+                              (+(sensorData[++i].slice(0,-1))) +
+                              (+(sensorData[++i].slice(0,-1))) ) / 3;
+            accessory.log.debug('SHT Humidty reading: ' + thisHumid + '%');
+            if (thisSensor == 1) {
+              accessory.state.sensor1State = NO_FAULT;
+              accessory.state.sensor1Temp  = thisTemp;
+              accessory.state.sensor1Humid = thisHumid;
+            } else {
+              accessory.state.sensor2State = NO_FAULT;
+              accessory.state.sensor2Temp  = thisTemp;
+              accessory.state.sensor2Humid = thisHumid;
+            }
+          } else {
+            // sensor was not listed as "Detected" - which means not OK
+            if (thisSensor == 1) {
+              accessory.log.debug('SHT Sensor 1 status is not normal (' + sensorData[i] + ')');
+              accessory.state.sensor1State = GENERAL_FAULT;
+            } else {
+              accessory.log.debug('SHT Sensor 2 status is not normal (' + sensorData[i] + ')');
+              accessory.state.sensor2State = GENERAL_FAULT;
+            }
+          }
+        }
+      }
+    } while (++i < sensorData.length);
+
+/*      // retrived status from device - parse the response and update the internal status variables
+      accessory.state.sensor1State  = NO_FAULT;
+      accessory.state.sensor1Temp   = 0;
+      accessory.state.sensor1Humid  = 0;
+      accessory.state.sensor2State  = NO_FAULT;
+      accessory.state.sensor2Temp   = 0;
+      accessory.state.sensor2Humid  = 0;
+*/
+    if (accessory.state.AlertState == LEAK_NOT_DETECTED) {
+      // move from no alert to alert when either sensor *exceeds* the set threshold
+      if ( (accessory.state.sensor1Humid > this.alertThreshold) ||
+           (accessory.state.sensor2Humid > this.alertThreshold) ) {
+        accessory.state.AlertState   = LEAK_DETECTED;
+      }
+    } else {
+      // move from alert back to no alert when *both* sensors *are less than* the set threshold
+      // this de-bounces alerts where the sensor is touching the threshold and may go into and out of
+      // alert status otherwise
+      if ( (accessory.state.sensor1Humid < this.alertThreshold) &&
+           (accessory.state.sensor2Humid < this.alertThreshold) ) {
+        accessory.state.AlertState   = LEAK_NOT_DETECTED;
+      }
+    }
+
+    accessory.log.debug("pollSensorState: Updating accessory state...");
+    accessory.leakSensor.updateCharacteristic(Characteristic.LeakDetected, accessory.state.AlertState);
+
+    // update HomeBridge with all status of all elements (i.e., SHT sensor readings)
     accessory.log.debug("pollSensorState: Updating state...");
-    accessory.outlet1Service.updateCharacteristic(Characteristic.On, accessory.state.outlet1On);
-    accessory.outlet1Service.updateCharacteristic(Characteristic.OutletInUse, accessory.state.outlet1InUse);
+    accessory.tempSensor1Service.updateCharacteristic(  Characteristic.CurrentTemperature,
+                                                        accessory.state.sensor1Temp );
+    accessory.humidSensor1Service.updateCharacteristic( Characteristic.CurrentRelativeHumidity,
+                                                        accessory.state.sensor1Humid );
+    accessory.tempSensor2Service.updateCharacteristic(  Characteristic.CurrentTemperature,
+                                                        accessory.state.sensor2Temp );
+    accessory.humidSensor2Service.updateCharacteristic( Characteristic.CurrentRelativeHumidity,
+                                                        accessory.state.sensor2Humid );
 
     accessory.pollState(); // (re)start polling timer
+    }, 3000); // setTimeout
   } // getState
 
   /**
