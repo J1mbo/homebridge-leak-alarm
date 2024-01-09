@@ -5,7 +5,7 @@
     "url": "https://github.com/J1mbo/homebridge-leak-alarm/issues"
   },
   "name": "homebridge-leak-alarm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A pluging for HomeBridge to read SHT sensor data from a simple Ethernet connected microcontroller via HTTP as CSV and present this as a leak alarm in Homekit. Note: BETA.",
   "deprecated": false,
   "devDependencies": {},
